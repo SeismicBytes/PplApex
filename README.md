@@ -10,8 +10,6 @@ This is a Streamlit app that analyzes survey responses for relevance and AI gene
 ## Installation
 
 ### Clone the repository:
-   git clone https://github.com/your-username/your-repo-name.git
-   cd your-repo-name
    
 ### Create a virtual environment and activate it:
 
