@@ -6,6 +6,11 @@ import time
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import squareform
 
 # Function to batch responses into manageable groups for processing
 def batch_responses(responses, batch_size):
@@ -115,6 +120,61 @@ def create_violin_plot(df):
     plt.ylabel('Relevancy Rating')
     st.pyplot(plt)
 
+# Function to cluster responses using the provided similarity algorithm
+def cluster_responses(df, threshold):
+    # Preprocess the responses
+    df['response'] = df['response'].astype(str).str.lower()
+
+    # Vectorize the responses
+    vectorizer = TfidfVectorizer(stop_words='english')
+    try:
+        X = vectorizer.fit_transform(df['response'])
+    except ValueError:
+        st.error("Error: Empty vocabulary. The responses may only contain stop words or be empty.")
+        return df
+
+    # Compute the similarity matrix
+    similarity_matrix = cosine_similarity(X)
+
+    # Compute the distance matrix
+    distance_matrix = 1 - similarity_matrix
+
+    # Ensure all distances are non-negative
+    distance_matrix = np.maximum(distance_matrix, 0)
+    np.fill_diagonal(distance_matrix, 0)
+
+    # Convert to condensed distance matrix
+    condensed_distance_matrix = squareform(distance_matrix)
+
+    # Perform hierarchical clustering
+    linkage_matrix = linkage(condensed_distance_matrix, method='average')
+
+    # Form clusters based on the specified threshold
+    clusters = fcluster(linkage_matrix, threshold, criterion='distance')
+
+    # Assign clusters to the DataFrame
+    df['Group'] = clusters
+
+    # Calculate similarity scores based on maximum similarity to other responses in the same group
+    similarity_scores = []
+    for i, group in enumerate(clusters):
+        same_group_indices = [j for j, g in enumerate(clusters) if g == group and j != i]
+        if same_group_indices:
+            max_similarity = max(similarity_matrix[i, same_group_indices])
+            similarity_scores.append(max_similarity)
+        else:
+            similarity_scores.append(np.nan)
+
+    df['Similarity Score'] = similarity_scores
+
+    # Identify unique groups and update the DataFrame
+    group_counts = df['Group'].value_counts()
+    unique_groups = group_counts[group_counts == 1].index
+
+    df.loc[df['Group'].isin(unique_groups), ['Group', 'Similarity Score']] = ""
+
+    return df
+
 # Streamlit interface
 col1, col2 = st.columns([1, 3])
 with col1:
@@ -122,52 +182,105 @@ with col1:
 with col2:
     st.markdown("<h1 style='text-align: left; color: lightblue;'>Phronesis Apex : Mini</h1>", unsafe_allow_html=True)
 
-
 # Sidebar for API key and settings
 st.sidebar.title("API Settings")
 api_key = st.sidebar.text_input('Gemini API Key', type='password')
 batch_size = st.sidebar.number_input('Batch Size', min_value=1, value=15)
 model_name = st.sidebar.selectbox('Select Model', ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'])
 
-# Configure the API key
+# Configure the API key and model
 if api_key:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name=model_name)
 else:
-    st.warning('Please enter your API key in the sidebar. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key')
-    # st.warning('Go to https://aistudio.google.com/app/apikey to create your API Key')
+    model = None
+
+# Store responses in session state
+if 'responses' not in st.session_state:
+    st.session_state['responses'] = []
+if 'df' not in st.session_state:
+    st.session_state['df'] = None
+if 'df_clustered' not in st.session_state:
+    st.session_state['df_clustered'] = None
+if 'survey_question' not in st.session_state:
+    st.session_state['survey_question'] = ''
 
 # Create tabs
-tab1, tab2 = st.tabs(["Analysis", "Visualization"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Submit Open Ends", "AI Analysis", "Visualizations", "Similarity Check", "History"])
 
 with tab1:
+    st.info("Please add both the survey question and survey responses. After that, you can proceed with analysis or similarity checks in the respective tabs.")
     # User input for survey question and responses
     survey_question = st.text_area('Survey Question')
     responses_text = st.text_area('Survey Responses (one per line)')
 
-    if st.button('Analyze Responses'):
-        if api_key and survey_question and responses_text:
+    if st.button('Submit Responses'):
+        if survey_question and responses_text:
             responses = responses_text.split('\n')
-            st.write(f"Total number of responses: {len(responses)}")
-
-            # Progress bar
-            progress_bar = st.progress(0)
-
-            df = generate(survey_question, responses, batch_size, model)
-            st.dataframe(df)
-
-            # Provide download link for the DataFrame
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download CSV", csv, "responses_analysis.csv", "text/csv", key='download-csv')
+            st.session_state['responses'] = responses
+            st.session_state['survey_question'] = survey_question
+            st.success("Responses submitted successfully!")
         else:
-            st.error('Please fill in all the required fields (API key, survey question, and responses).')
+            st.error('Please fill in both the survey question and responses.')
 
 with tab2:
-    if 'df' in locals():
+    if 'responses' in st.session_state and st.session_state['responses']:
+        if st.button('Analyze Responses'):
+            if model is not None:
+                responses = st.session_state['responses']
+                survey_question = st.session_state['survey_question']
+                st.write(f"Total number of responses: {len(responses)}")
+
+                # Progress bar
+                progress_bar = st.progress(0)
+
+                df = generate(survey_question, responses, batch_size, model)
+                st.dataframe(df)
+                st.session_state['df'] = df
+
+                # Provide download link for the DataFrame
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("Download CSV", csv, "responses_analysis.csv", "text/csv", key='download-csv')
+            else:
+                st.error("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
+    else:
+        st.info("Please submit responses in the Submit Responses tab first.")
+
+with tab3:
+    if 'df' in st.session_state and st.session_state['df'] is not None:
         st.subheader("Word Cloud of Responses")
-        create_word_cloud(df['response'])
+        create_word_cloud(st.session_state['responses'])
         
         st.subheader("Violin Plot of Relevancy Ratings")
-        create_violin_plot(df)
+        create_violin_plot(st.session_state['df'])
     else:
-        st.info("Please run the analysis first to generate visualizations.")
+        st.info("Please analyze the responses in the Analysis tab first.")
+
+with tab4:
+    st.subheader("Similarity Check")
+    if 'responses' in st.session_state and st.session_state['responses']:
+        if model is not None:
+            threshold = st.slider("Similarity Threshold", 0.1, 1.0, 0.3, 0.1)
+            df_similarity = pd.DataFrame({'response': st.session_state['responses']})
+            df_clustered = cluster_responses(df_similarity, threshold)
+            st.dataframe(df_clustered)
+            st.session_state['df_clustered'] = df_clustered
+        else:
+            st.error("Please enter your API key in the sidebar before running the similarity check.")
+    else:
+        st.info("Please submit responses in the Submit Responses tab first.")
+
+with tab5:
+    st.subheader("History")
+    if 'df' in st.session_state and st.session_state['df'] is not None:
+        st.write("Analysis Data:")
+        st.dataframe(st.session_state['df'])
+    if 'df_clustered' in st.session_state and st.session_state['df_clustered'] is not None:
+        st.write("Similarity Data:")
+        st.dataframe(st.session_state['df_clustered'])
+
+    # if 'responses' in st.session_state and st.session_state['responses']:
+    #     st.write("Raw Responses:")
+    #     st.dataframe(pd.DataFrame(st.session_state['responses'], columns=['Response']))
+    else:
+        st.info("No data available. Please run the analysis or similarity check first.")
