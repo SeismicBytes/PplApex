@@ -24,8 +24,7 @@ def batch_responses(responses, batch_size):
 # Function to clean and parse JSON output
 def clean_and_parse_json(json_text):
     try:
-        cleaned_text = json_text.strip().strip('
-').strip().strip('json').strip().strip('JSON').strip()
+        cleaned_text = json_text.strip().strip('').strip().strip('json').strip().strip('JSON').strip()
         if cleaned_text.startswith("JSON") or cleaned_text.startswith("json"):
             cleaned_text = cleaned_text[4:].strip()
         return json.loads(cleaned_text)
