@@ -214,7 +214,7 @@ main_content = st.empty()
 if st.session_state.step == 'api_key':
     with main_content.container():
         st.title("Enter API Key")
-        st.info("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
+        st.info("Please enter your API key before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
         api_key = st.text_input('Gemini API Key', type='password')
         if st.button('Submit API Key'):
             if api_key:
