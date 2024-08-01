@@ -1,4 +1,3 @@
-
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
@@ -12,26 +11,40 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
+import re
 
 # Function to batch responses into manageable groups for processing
 def batch_responses(responses, batch_size):
-    batches = []
-    for i in range(0, len(responses), batch_size):
-        batch = responses[i:i+batch_size]
-        batches.append(batch)
-    return batches
-
+    return [responses[i:i+batch_size] for i in range(0, len(responses), batch_size)]
 # Function to clean and parse JSON output
 def clean_and_parse_json(json_text):
     try:
-        cleaned_text = json_text.strip().strip('').strip().strip('json').strip().strip('JSON').strip()
-        if cleaned_text.startswith("JSON") or cleaned_text.startswith("json"):
-            cleaned_text = cleaned_text[4:].strip()
-        return json.loads(cleaned_text)
+        # Remove code block markers if present
+        cleaned_text = re.sub(r'```json\s*|\s*```', '', json_text)
+        
+        # Remove any leading/trailing whitespace and common prefixes
+        cleaned_text = cleaned_text.strip().lstrip('json').lstrip('JSON').strip()
+        
+        # Attempt to parse the JSON
+        parsed_json = json.loads(cleaned_text)
+        
+        # Ensure the result is a list
+        if isinstance(parsed_json, dict):
+            parsed_json = [parsed_json]
+        
+        return parsed_json
     except json.JSONDecodeError as e:
         st.error(f"JSON Decode Error: {e}")
         st.error(f"Original text: {json_text}")
-        return []
+        # Attempt to fix common JSON errors
+        try:
+            fixed_text = cleaned_text.replace("'", '"')  # Replace single quotes with double quotes
+            fixed_text = re.sub(r'(\w+):', r'"\1":', fixed_text)  # Add quotes to keys
+            return json.loads(fixed_text)
+        except:
+            st.error("Could not parse JSON even after attempted fixes.")
+            return []
+
 
 # Generate survey response analysis and parse the output into a DataFrame
 def generate(survey_question, responses, batch_size, model):
@@ -93,7 +106,7 @@ def generate(survey_question, responses, batch_size, model):
         progress = (i + 1) / len(batches)
         progress_bar.progress(progress, f"{progress:.1%}")
         
-        time.sleep(10)  # Avoid hitting rate limits
+        time.sleep(6)  # Avoid hitting rate limits
 
     # Convert parsed data to DataFrame
     df = pd.DataFrame(all_parsed_data)
@@ -177,111 +190,105 @@ def cluster_responses(df, threshold):
     return df
 
 # Streamlit interface
+st.set_page_config(layout="wide")
 col1, col2 = st.columns([1, 3])
 with col1:
     st.image("ppl_logo.jpg", width=100)  # Replace with your image path
 with col2:
     st.markdown("<h1 style='text-align: left; color: lightblue;'>Phronesis Apex : Mini</h1>", unsafe_allow_html=True)
 
-# Sidebar for API key and settings
-st.sidebar.title("API Settings")
-api_key = st.sidebar.text_input('Gemini API Key', type='password')
-batch_size = st.sidebar.number_input('Batch Size', min_value=1, value=15)
-model_name = st.sidebar.selectbox('Select Model', ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'])
+# Initialize session state
+if 'step' not in st.session_state:
+    st.session_state.step = 'api_key'
 
-# Configure the API key and model
-if api_key:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name=model_name)
-else:
-    model = None
+# Sidebar for settings (only shown after API key is entered)
+if st.session_state.step != 'api_key':
+    st.sidebar.title("Settings")
+    batch_size = st.sidebar.number_input('Batch Size', min_value=1, value=15)
+    model_name = st.sidebar.selectbox('Select Model', ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'])
 
-# Store responses in session state
-if 'responses' not in st.session_state:
-    st.session_state['responses'] = []
-if 'df' not in st.session_state:
-    st.session_state['df'] = None
-if 'df_clustered' not in st.session_state:
-    st.session_state['df_clustered'] = None
-if 'survey_question' not in st.session_state:
-    st.session_state['survey_question'] = ''
+# Main content area
+main_content = st.empty()
 
-# Create tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Submit Open Ends", "AI Analysis", "Visualizations", "Similarity Check", "History"])
-
-with tab1:
-    st.info("Please add both the survey question and survey responses. After that, you can proceed with analysis or similarity checks in the respective tabs.")
-    # User input for survey question and responses
-    survey_question = st.text_area('Survey Question')
-    responses_text = st.text_area('Survey Responses (one per line)')
-
-    if st.button('Submit Responses'):
-        if survey_question and responses_text:
-            responses = responses_text.split('\n')
-            st.session_state['responses'] = responses
-            st.session_state['survey_question'] = survey_question
-            st.success("Responses submitted successfully!")
-        else:
-            st.error('Please fill in both the survey question and responses.')
-
-with tab2:
-    if 'responses' in st.session_state and st.session_state['responses']:
-        if st.button('Analyze Responses'):
-            if model is not None:
-                responses = st.session_state['responses']
-                survey_question = st.session_state['survey_question']
-                st.write(f"Total number of responses: {len(responses)}")
-
-                # Progress bar
-                progress_bar = st.progress(0)
-
-                df = generate(survey_question, responses, batch_size, model)
-                st.dataframe(df)
-                st.session_state['df'] = df
-
-                # Provide download link for the DataFrame
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("Download CSV", csv, "responses_analysis.csv", "text/csv", key='download-csv')
+# Step 1: API Key Input
+if st.session_state.step == 'api_key':
+    with main_content.container():
+        st.title("Enter API Key")
+        st.info("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
+        api_key = st.text_input('Gemini API Key', type='password')
+        if st.button('Submit API Key'):
+            if api_key:
+                genai.configure(api_key=api_key)
+                st.session_state.model = genai.GenerativeModel(model_name='gemini-1.5-pro')
+                st.session_state.step = 'survey_input'
+                st.experimental_rerun()
             else:
-                st.error("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
-    else:
-        st.info("Please submit responses in the Submit Responses tab first.")
+                st.error("Please enter a valid API key.")
 
-with tab3:
-    if 'df' in st.session_state and st.session_state['df'] is not None:
-        st.subheader("Word Cloud of Responses")
-        create_word_cloud(st.session_state['responses'])
-        
-        st.subheader("Violin Plot of Relevancy Ratings")
-        create_violin_plot(st.session_state['df'])
-    else:
-        st.info("Please analyze the responses in the Analysis tab first.")
+# Step 2: Survey Question and Responses Input
+elif st.session_state.step == 'survey_input':
+    with main_content.container():
+        st.title("Enter Survey Question and Responses")
+        survey_question = st.text_area('Survey Question')
+        responses_text = st.text_area('Survey Responses (one per line)')
+        if st.button('Submit Survey Data'):
+            if survey_question and responses_text:
+                st.session_state.survey_question = survey_question
+                st.session_state.responses = responses_text.split('\n')
+                st.session_state.step = 'main_app'
+                st.experimental_rerun()
+            else:
+                st.error('Please fill in both the survey question and responses.')
 
-with tab4:
-    st.subheader("Similarity Check")
-    if 'responses' in st.session_state and st.session_state['responses']:
-        if model is not None:
-            threshold = st.slider("Similarity Threshold", 0.1, 1.0, 0.3, 0.1)
-            df_similarity = pd.DataFrame({'response': st.session_state['responses']})
-            df_clustered = cluster_responses(df_similarity, threshold)
-            st.dataframe(df_clustered)
-            st.session_state['df_clustered'] = df_clustered
+# Step 3: Main Application
+elif st.session_state.step == 'main_app':
+    # Create tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Submit Open Ends", "AI Analysis", "Visualizations", "Similarity Check", "History"])
+
+    with tab1:
+        st.info("Survey question and responses submitted. You can now proceed with analysis or similarity checks in the respective tabs.")
+        st.write("Survey Question:", st.session_state.survey_question)
+        st.write("Number of responses:", len(st.session_state.responses))
+
+    with tab2:
+        if st.button('Analyze Responses'):
+            progress_bar = st.progress(0)
+            st.session_state.df = generate(st.session_state.survey_question, st.session_state.responses, batch_size, st.session_state.model)
+            st.dataframe(st.session_state.df)
+            csv = st.session_state.df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download CSV", csv, "responses_analysis.csv", "text/csv", key='download-csv')
+
+    with tab3:
+        if 'df' in st.session_state and st.session_state.df is not None:
+            st.subheader("Word Cloud of Responses")
+            create_word_cloud(st.session_state.responses)
+            st.subheader("Violin Plot of Relevancy Ratings")
+            create_violin_plot(st.session_state.df)
         else:
-            st.error("Please enter your API key in the sidebar before running the similarity check.")
-    else:
-        st.info("Please submit responses in the Submit Responses tab first.")
+            st.info("Please analyze the responses in the Analysis tab first.")
 
-with tab5:
-    st.subheader("History")
-    if 'df' in st.session_state and st.session_state['df'] is not None:
-        st.write("Analysis Data:")
-        st.dataframe(st.session_state['df'])
-    if 'df_clustered' in st.session_state and st.session_state['df_clustered'] is not None:
-        st.write("Similarity Data:")
-        st.dataframe(st.session_state['df_clustered'])
+    with tab4:
+        st.subheader("Similarity Check")
+        similarity_percent = st.slider("Similarity %", 1, 100, 30)
+        threshold = 1 - (similarity_percent / 100)  # Convert percentage to threshold
+        if st.button('Run Similarity Check'):
+            df_similarity = pd.DataFrame({'response': st.session_state.responses})
+            st.session_state.df_clustered = cluster_responses(df_similarity, threshold)
+            st.dataframe(st.session_state.df_clustered)
 
-    # if 'responses' in st.session_state and st.session_state['responses']:
-    #     st.write("Raw Responses:")
-    #     st.dataframe(pd.DataFrame(st.session_state['responses'], columns=['Response']))
-    else:
-        st.info("No data available. Please run the analysis or similarity check first.")
+    with tab5:
+        st.subheader("History")
+        if 'df' in st.session_state and st.session_state.df is not None:
+            st.write("Analysis Data:")
+            st.dataframe(st.session_state.df)
+        if 'df_clustered' in st.session_state and st.session_state.df_clustered is not None:
+            st.write("Similarity Data:")
+            st.dataframe(st.session_state.df_clustered)
+        if not ('df' in st.session_state and st.session_state.df is not None) and not ('df_clustered' in st.session_state and st.session_state.df_clustered is not None):
+            st.info("No data available. Please run the analysis or similarity check first.")
+
+# Add a reset button in the sidebar
+if st.sidebar.button('Reset Application'):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.experimental_rerun()
