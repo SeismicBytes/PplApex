@@ -221,7 +221,7 @@ if st.session_state.step == 'api_key':
                 genai.configure(api_key=api_key)
                 st.session_state.model = genai.GenerativeModel(model_name='gemini-1.5-pro')
                 st.session_state.step = 'survey_input'
-                st.experimental_rerun()
+                # st.experimental_rerun()
             else:
                 st.error("Please enter a valid API key.")
 
