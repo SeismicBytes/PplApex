@@ -16,7 +16,6 @@ import re
 # Function to batch responses into manageable groups for processing
 def batch_responses(responses, batch_size):
     return [responses[i:i+batch_size] for i in range(0, len(responses), batch_size)]
-
 # Function to clean and parse JSON output
 def clean_and_parse_json(json_text):
     try:
@@ -201,12 +200,6 @@ with col2:
 # Initialize session state
 if 'step' not in st.session_state:
     st.session_state.step = 'api_key'
-    st.session_state.model = None
-    st.session_state.survey_question = None
-    st.session_state.responses = None
-    st.session_state.df = None
-    st.session_state.df_clustered = None
-    st.session_state.api_key_submitted = False
 
 # Sidebar for settings (only shown after API key is entered)
 if st.session_state.step != 'api_key':
@@ -221,14 +214,14 @@ main_content = st.empty()
 if st.session_state.step == 'api_key':
     with main_content.container():
         st.title("Enter API Key")
-        st.info("Please enter your API key before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
+        st.info("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
         api_key = st.text_input('Gemini API Key', type='password')
-        if st.button('Submit API Key') and not st.session_state.api_key_submitted:
+        if st.button('Submit API Key'):
             if api_key:
                 genai.configure(api_key=api_key)
                 st.session_state.model = genai.GenerativeModel(model_name='gemini-1.5-pro')
                 st.session_state.step = 'survey_input'
-                st.session_state.api_key_submitted = True
+                st.experimental_rerun()
             else:
                 st.error("Please enter a valid API key.")
 
@@ -238,15 +231,14 @@ elif st.session_state.step == 'survey_input':
         st.title("Enter Survey Question and Responses")
         survey_question = st.text_area('Survey Question')
         responses_text = st.text_area('Survey Responses (one per line)')
-        if st.button('Submit Survey Data') and st.session_state.api_key_submitted:
+        if st.button('Submit Survey Data'):
             if survey_question and responses_text:
                 st.session_state.survey_question = survey_question
                 st.session_state.responses = responses_text.split('\n')
                 st.session_state.step = 'main_app'
+                st.experimental_rerun()
             else:
                 st.error('Please fill in both the survey question and responses.')
-        elif not st.session_state.api_key_submitted:
-            st.warning('Please submit your API key before proceeding.')
 
 # Step 3: Main Application
 elif st.session_state.step == 'main_app':
@@ -299,5 +291,4 @@ elif st.session_state.step == 'main_app':
 if st.sidebar.button('Reset Application'):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.session_state.step = 'api_key'
-    st.session_state.api_key_submitted = False
+    st.experimental_rerun()
