@@ -236,7 +236,7 @@ elif st.session_state.step == 'survey_input':
                 st.session_state.survey_question = survey_question
                 st.session_state.responses = responses_text.split('\n')
                 st.session_state.step = 'main_app'
-                st.experimental_rerun()
+                # st.experimental_rerun()
             else:
                 st.error('Please fill in both the survey question and responses.')
 
@@ -291,4 +291,4 @@ elif st.session_state.step == 'main_app':
 if st.sidebar.button('Reset Application'):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
+    # st.experimental_rerun()
