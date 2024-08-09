@@ -46,7 +46,6 @@ def clean_and_parse_json(json_text):
             st.error("Could not parse JSON even after attempted fixes.")
             return []
 
-
 # Generate survey response analysis and parse the output into a DataFrame
 def generate(survey_question, responses, batch_size, model):
     prefix = """
@@ -201,12 +200,6 @@ with col2:
 # Initialize session state
 if 'step' not in st.session_state:
     st.session_state.step = 'api_key'
-    st.session_state.api_key = None
-    st.session_state.model = None
-    st.session_state.survey_question = None
-    st.session_state.responses = None
-    st.session_state.df = None
-    st.session_state.df_clustered = None
 
 # Sidebar for settings (only shown after API key is entered)
 if st.session_state.step != 'api_key':
@@ -221,15 +214,14 @@ main_content = st.empty()
 if st.session_state.step == 'api_key':
     with main_content.container():
         st.title("Enter API Key")
-        st.info("Please enter your API key in the sidebar before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
-        api_key = st.text_input('Gemini API Key', type='password', key='api_key_input')
-        if st.button('Submit API Key', key='submit_api_key'):
+        st.info("Please enter your API key before analyzing responses. \n \n Go to https://aistudio.google.com/app/apikey to create your API Key.")
+        api_key = st.text_input('Gemini API Key', type='password')
+        if st.button('Submit API Key'):
             if api_key:
-                st.session_state.api_key = api_key
                 genai.configure(api_key=api_key)
                 st.session_state.model = genai.GenerativeModel(model_name='gemini-1.5-pro')
                 st.session_state.step = 'survey_input'
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Please enter a valid API key.")
 
@@ -237,14 +229,14 @@ if st.session_state.step == 'api_key':
 elif st.session_state.step == 'survey_input':
     with main_content.container():
         st.title("Enter Survey Question and Responses")
-        survey_question = st.text_area('Survey Question', key='survey_question_input')
-        responses_text = st.text_area('Survey Responses (one per line)', key='responses_input')
-        if st.button('Submit Survey Data', key='submit_survey_data'):
+        survey_question = st.text_area('Survey Question')
+        responses_text = st.text_area('Survey Responses (one per line)')
+        if st.button('Submit Survey Data'):
             if survey_question and responses_text:
                 st.session_state.survey_question = survey_question
                 st.session_state.responses = responses_text.split('\n')
                 st.session_state.step = 'main_app'
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error('Please fill in both the survey question and responses.')
 
@@ -259,7 +251,7 @@ elif st.session_state.step == 'main_app':
         st.write("Number of responses:", len(st.session_state.responses))
 
     with tab2:
-        if st.button('Analyze Responses', key='analyze_responses'):
+        if st.button('Analyze Responses'):
             progress_bar = st.progress(0)
             st.session_state.df = generate(st.session_state.survey_question, st.session_state.responses, batch_size, st.session_state.model)
             st.dataframe(st.session_state.df)
@@ -279,7 +271,7 @@ elif st.session_state.step == 'main_app':
         st.subheader("Similarity Check")
         similarity_percent = st.slider("Similarity %", 1, 100, 30)
         threshold = 1 - (similarity_percent / 100)  # Convert percentage to threshold
-        if st.button('Run Similarity Check', key='run_similarity_check'):
+        if st.button('Run Similarity Check'):
             df_similarity = pd.DataFrame({'response': st.session_state.responses})
             st.session_state.df_clustered = cluster_responses(df_similarity, threshold)
             st.dataframe(st.session_state.df_clustered)
@@ -295,8 +287,7 @@ elif st.session_state.step == 'main_app':
         if not ('df' in st.session_state and st.session_state.df is not None) and not ('df_clustered' in st.session_state and st.session_state.df_clustered is not None):
             st.info("No data available. Please run the analysis or similarity check first.")
 
-# Add a reset button in the sidebar
-if st.sidebar.button('Reset Application', key='reset_app'):
+if st.sidebar.button('Reset Application'):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
