@@ -215,7 +215,7 @@ if st.session_state.step == 'project_info':
         st.title("Enter Project Information")
         st.info("Please enter your Google Cloud project name and location to initialize Vertex AI.")
         project_name = st.text_input('Project Name')
-        location = st.text_input('Location (e.g., us-central1)')
+        location = st.text_input('Location (e.g., us-central1)',"us-central1")
         if st.button('Initialize Vertex AI'):
             if project_name and location:
                 try:
