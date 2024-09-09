@@ -191,7 +191,7 @@ col1, col2 = st.columns([1, 3])
 with col1:
     st.image("ppl_logo.jpg", width=100)  # Replace with your image path
 with col2:
-    st.markdown("<h1 style='text-align: left; color: lightblue;'>Phronesis Apex : Mini</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: left; color: lightblue;'>Phronesis Apex</h1>", unsafe_allow_html=True)
 
 # Initialize session state
 if 'step' not in st.session_state:
@@ -215,7 +215,7 @@ if st.session_state.step == 'project_info':
         st.title("Enter Project Information")
         st.info("Please enter your Google Cloud project name and location to initialize Vertex AI.")
         project_name = st.text_input('Project Name')
-        location = st.text_input('Location (e.g., us-central1)',"us-central1")
+        location = st.text_input('Location',"us-central1")
         if st.button('Initialize Vertex AI'):
             if project_name and location:
                 try:
